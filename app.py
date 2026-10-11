@@ -1,4 +1,6 @@
-import os,hmac,shutil,tempfile,subprocess,wave
+import os,hmac,shutil,tempfile,subprocess,wave,re
+import urllib.request,urllib.error
+from xml.sax.saxutils import escape
 from pathlib import Path
 from fastapi import FastAPI,HTTPException,Header
 from fastapi.responses import FileResponse
@@ -52,10 +54,49 @@ def slide(path,headline,copy,brand,idx,total):
     d.text((45,847),"AUTOMATE  •  LEARN  •  BUILD",font=font(14,True),fill=(142,226,234))
     d.text((45,900),"#Shorts   #n8n   #Automation",font=font(14),fill=(202,220,231))
     im.save(path)
+# Azure Speech F0 neural TTS is enabled when its key and region are configured.
+# Without those variables, the original free eSpeak NG path remains available.
+def synthesize_speech(text,wav):
+    key=os.environ.get("AZURE_SPEECH_KEY","").strip()
+    region=os.environ.get("AZURE_SPEECH_REGION","").strip().lower()
+    if bool(key)!=bool(region):
+        raise ValueError("Set both AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, or neither")
+    if key:
+        if not re.fullmatch(r"[a-z0-9-]{2,32}",region):
+            raise ValueError("Invalid AZURE_SPEECH_REGION")
+        voice=os.environ.get("AZURE_SPEECH_VOICE","en-IN-ArjunNeural").strip()
+        allowed={"en-IN-ArjunNeural","en-IN-PrabhatNeural","en-IN-AaravNeural","en-IN-RehaanNeural","en-IN-KunalNeural"}
+        if voice not in allowed:
+            raise ValueError("Unsupported AZURE_SPEECH_VOICE")
+        text_xml=escape(text)
+        ssml=("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-IN'>"
+              f"<voice name='{voice}'>{text_xml}</voice></speak>")
+        headers={"Ocp-Apim-Subscription-Key":key,
+                 "Content-Type":"application/ssml+xml; charset=utf-8",
+                 "X-Microsoft-OutputFormat":"riff-24khz-16bit-mono-pcm",
+                 "User-Agent":"TechTalksShortsRenderer"}
+        request=urllib.request.Request(
+            f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1",
+            data=ssml.encode("utf-8"),headers=headers,method="POST")
+        try:
+            with urllib.request.urlopen(request,timeout=75) as response:
+                content=response.read()
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Azure Speech request failed (HTTP {exc.code}). Check region, Speech F0 resource, and key.") from None
+        except urllib.error.URLError:
+            raise RuntimeError("Azure Speech connection failed. Check region/network and try again.") from None
+        if not content.startswith(b"RIFF"):
+            raise RuntimeError("Azure Speech did not return WAV/RIFF audio")
+        wav.write_bytes(content)
+        return "azure-neural"
+    speech=subprocess.run(["espeak-ng","-v","en-in+m3","-s","144","-w",str(wav),text],capture_output=True,timeout=100)
+    if speech.returncode:
+        raise RuntimeError(speech.stderr.decode(errors="replace")[-400:])
+    return "espeak-ng"
+
 def generate(data,tmp):
     wav=tmp/"narration.wav"
-    speech=subprocess.run(["espeak-ng","-v","en-in+m3","-s","144","-w",str(wav),data.voiceover],capture_output=True,timeout=100)
-    if speech.returncode:raise RuntimeError(speech.stderr.decode(errors="replace")[-400:])
+    synthesize_speech(data.voiceover,wav)
     with wave.open(str(wav),"rb") as a:duration=a.getnframes()/a.getframerate()
     if not 8<=duration<=160:raise ValueError("Narration must be between 8 and 160 seconds")
     words=data.voiceover.strip().split();sections=[" ".join(words[i:i+13]) for i in range(0,len(words),13)]
@@ -76,7 +117,7 @@ def generate(data,tmp):
     return output
 @app.get("/health")
 def health():
-    return {"status":"ok","renderer":"offline-espeak-ffmpeg","format":"540x960 mp4"}
+    return {"status":"ok","renderer":"ffmpeg-cloud-shorts","tts":"azure-neural" if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION") else "espeak-ng","format":"540x960 mp4"}
 @app.post("/render")
 async def render(data:Short,x_render_key:str|None=Header(None)):
     secret=os.environ.get("RENDER_SECRET")
