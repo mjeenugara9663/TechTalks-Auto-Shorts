@@ -75,55 +75,11 @@ def cartoon(d,anchor,pose="explain",scale=1.0):
     d.ellipse((x+p(17),y+p(32),x+p(25),y+p(42)),fill=dark)
     d.arc((x-p(16),y+p(43),x+p(19),y+p(68)),5,170,fill=(122,57,65),width=3)
 PRESENTER_ATLAS=Path(__file__).parent/'assets'/'presenter_atlas.webp'
+from visuals_v3 import render_slide_v3, split_voiceover
+
 def slide_v3(path,headline,copy,brand,idx,total,topic):
-    theme,(base,mid,bright)=pick_theme(topic,idx)
-    im=Image.new('RGBA',(W,H));d=ImageDraw.Draw(im)
-    for y in range(H):
-        t=y/H
-        rgb=tuple(int(base[k]*(1-t)+mid[k]*(t*.72)) for k in range(3))
-        d.line((0,y,W,y),fill=rgb+(255,))
-    d.ellipse((310,-110,695,260),outline=bright+(255,),width=4)
-    d.ellipse((-220,600,235,1130),outline=tuple(min(255,x+35) for x in base)+(255,),width=5)
-    d.rounded_rectangle((21,27,519,98),radius=18,fill=base+(255,),outline=bright+(255,),width=2)
-    name=brand.upper();namefont=font(18,True)
-    while d.textbbox((0,0),name,font=namefont)[2]>W-55 and len(name)>8:name=name[:-2]
-    d.text((40,51),name,font=namefont,fill='white')
-    d.rounded_rectangle((21,130,519,283),radius=22,fill=(10,19,44,238),outline=bright+(255,),width=3)
-    label=headline.upper()
-    for size in (34,31,28,25,21):
-        lf=font(size,True);lines=wrapped(d,label,lf,W-79)
-        if len(lines)<=3 and len(lines)*size*1.22<132:break
-    yy=150+(128-len(lines)*size*1.22)/2
-    for line in lines[:3]:
-        d.text((41,yy),line,font=lf,fill=(255,247,232));yy+=size*1.22
-    d.rounded_rectangle((211,306,520,807),radius=24,fill=(245,252,255),outline=bright+(255,),width=4)
-    d.rounded_rectangle((230,329,493,383),radius=13,fill=mid+(255,))
-    d.text((245,344),('INTRO' if idx==0 else 'WRAP UP' if idx==total-1 else 'EXPLAINED'),font=font(21,True),fill='white')
-    d.line((232,402,486,402),fill=mid+(255,),width=4)
-    sentence=copy.replace('\n',' ').strip()
-    for size in (29,27,25,23,21,19):
-        ft=font(size,True);lines=wrapped(d,sentence,ft,255)
-        if len(lines)*int(size*1.33)<307:break
-    yy=431
-    for line in lines[:10]:
-        d.text((228,yy),line,font=ft,fill=(22,40,69)); yy+=int(size*1.33)
-    d.rounded_rectangle((228,731,491,781),radius=14,fill=mid+(255,))
-    d.text((240,748),'LEARN  /  BUILD  /  GROW',font=font(15,True),fill='white')
-    with Image.open(PRESENTER_ATLAS) as atlas_img:
-        atlas=atlas_img.convert('RGBA')
-    cell_w=atlas.width//3;cell_h=atlas.height//2
-    pose=[1,2,3,0,4,5][idx%6]
-    sprite=atlas.crop(((pose%3)*cell_w,(pose//3)*cell_h,((pose%3)+1)*cell_w,((pose//3)+1)*cell_h))
-    bounds=sprite.getchannel('A').getbbox()
-    if bounds:
-        sprite=sprite.crop(bounds)
-        sprite.thumbnail((270,500),Image.Resampling.LANCZOS)
-        im.alpha_composite(sprite,(max(-9,5+(245-sprite.width)//2),835-sprite.height))
-    d=ImageDraw.Draw(im)
-    d.rounded_rectangle((37,879,W-37,888),radius=4,fill=(17,31,55))
-    d.rounded_rectangle((37,879,37+int((W-74)*(idx+1)/total),888),radius=4,fill=bright+(255,))
-    d.text((37,917),'AI  •  EXPLAINED SIMPLY',font=font(16,True),fill='white')
-    im.convert('RGB').save(path)
+    return render_slide_v3(path,headline,copy,brand,idx,total,topic,
+                           PRESENTER_ATLAS,pick_theme,font,W,H)
 
 def slide(path,headline,copy,brand,idx,total,topic=""):
     if PRESENTER_ATLAS.is_file():
@@ -239,7 +195,7 @@ def generate(data,tmp):
     synthesize_speech(data.voiceover,wav)
     with wave.open(str(wav),"rb") as a:duration=a.getnframes()/a.getframerate()
     if not 8<=duration<=160:raise ValueError("Narration must be between 8 and 160 seconds")
-    words=data.voiceover.strip().split();sections=[" ".join(words[i:i+13]) for i in range(0,len(words),13)]
+    words=data.voiceover.strip().split();sections=split_voiceover(data.voiceover)
     word_total=sum(len(s.split()) for s in sections)
     slides=[("TODAY'S TOPIC",data.topic,1.4)]
     for i,part in enumerate(sections):slides.append((f"POINT {i+1} OF {len(sections)}",part,(duration-1.4)*len(part.split())/word_total))
@@ -257,7 +213,7 @@ def generate(data,tmp):
     return output
 @app.get("/health")
 def health():
-    return {"status":"ok","renderer":"ffmpeg-cloud-shorts-v3" if PRESENTER_ATLAS.is_file() else "ffmpeg-cloud-shorts-v2","tts":"azure-neural" if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION") else "espeak-ng","format":"540x960 mp4"}
+    return {"status":"ok","renderer":"ffmpeg-cloud-shorts-v3-layout2" if PRESENTER_ATLAS.is_file() else "ffmpeg-cloud-shorts-v2","tts":"azure-neural" if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION") else "espeak-ng","format":"540x960 mp4"}
 @app.post("/render")
 async def render(data:Short,x_render_key:str|None=Header(None)):
     secret=os.environ.get("RENDER_SECRET")
