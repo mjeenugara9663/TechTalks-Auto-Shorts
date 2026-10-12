@@ -30,29 +30,116 @@ def wrapped(draw,txt,ft,maxw):
             current=word
     if current:result.append(current)
     return result
-def slide(path,headline,copy,brand,idx,total):
+# Version 2: light-weight themed explainer visuals with a vector cartoon presenter.
+# No extra Python packages, assets, GPU or changes to the existing n8n request body.
+THEMES={
+ "ai":((24,36,78),(95,133,235),(119,220,255)),
+ "automation":((13,53,53),(30,151,124),(157,245,205)),
+ "cloud":((19,46,75),(73,141,199),(182,227,255)),
+ "security":((68,30,54),(184,76,107),(255,191,206)),
+ "data":((35,41,83),(125,107,200),(224,201,255)),
+ "creative":((72,43,43),(221,136,82),(255,222,160)),
+ "learning":((29,55,76),(72,177,184),(177,242,240))
+}
+def pick_theme(topic,idx):
+    t=topic.lower()
+    if any(x in t for x in ["n8n","workflow","trigger","webhook","automation","oauth","api"]):base="automation"
+    elif any(x in t for x in ["cloud","azure","server","network","infrastructure"]):base="cloud"
+    elif any(x in t for x in ["security","privacy","injection","guardrail","jailbreak"]):base="security"
+    elif any(x in t for x in ["data","vector","embedding","search","rag","database"]):base="data"
+    elif any(x in t for x in ["image","video","voice","speech","multimodal","diffusion"]):base="creative"
+    elif any(x in t for x in ["model","llm","neural","machine learning","ai agent","artificial intelligence"]):base="ai"
+    else:base="learning"
+    names=list(THEMES)
+    if idx%4==2:base=names[(names.index(base)+1)%len(names)]
+    return base,THEMES[base]
+def cartoon(d,anchor,pose="explain",scale=1.0):
+    x,y=anchor
+    def p(v):return int(v*scale)
+    skin=(245,186,139);shirt=(30,99,178);dark=(20,39,63)
+    # Body, arms and collar. Presenter is a deliberately simple cartoon, not a talking avatar.
+    d.rounded_rectangle((x-p(61),y+p(92),x+p(72),y+p(256)),radius=p(23),fill=shirt,outline=(162,225,254),width=3)
+    d.polygon([(x-p(10),y+p(91)),(x+p(14),y+p(91)),(x+p(3),y+p(125))],fill=(240,242,247))
+    d.line([(x-p(50),y+p(139)),(x-p(86),y+p(196)),(x-p(69),y+p(220))],fill=skin,width=max(6,p(18)))
+    if pose=="point":
+        d.line([(x+p(64),y+p(143)),(x+p(102),y+p(88)),(x+p(133),y+p(61))],fill=skin,width=max(6,p(18)))
+        d.ellipse((x+p(125),y+p(47),x+p(143),y+p(75)),fill=skin)
+    elif pose=="think":
+        d.line([(x+p(62),y+p(145)),(x+p(92),y+p(124)),(x+p(66),y+p(67))],fill=skin,width=max(6,p(18)))
+    else:
+        d.line([(x+p(61),y+p(141)),(x+p(108),y+p(176)),(x+p(132),y+p(159))],fill=skin,width=max(6,p(18)))
+        d.ellipse((x+p(121),y+p(148),x+p(147),y+p(174)),fill=skin)
+    d.ellipse((x-p(47),y-p(25),x+p(49),y+p(93)),fill=skin,outline=(93,69,76),width=3)
+    d.pieslice((x-p(49),y-p(39),x+p(53),y+p(41)),180,360,fill=dark)
+    d.ellipse((x-p(24),y+p(32),x-p(16),y+p(42)),fill=dark)
+    d.ellipse((x+p(17),y+p(32),x+p(25),y+p(42)),fill=dark)
+    d.arc((x-p(16),y+p(43),x+p(19),y+p(68)),5,170,fill=(122,57,65),width=3)
+def slide(path,headline,copy,brand,idx,total,topic=""):
+    theme,(base,mid,bright)=pick_theme(topic or headline,idx)
     im=Image.new("RGB",(W,H));d=ImageDraw.Draw(im)
+    # Distinct palette + alternating layouts, designed for narrow-screen readability.
     for y in range(H):
-        q=y/H;d.line((0,y,W,y),fill=(int(9+8*q),int(22+18*q),int(40+35*q)))
-    for x in range(24,W,70):d.line((x,125,x,880),fill=(26,50,69))
-    for y in range(145,900,70):d.line((20,y,W-20,y),fill=(26,50,69))
-    d.rounded_rectangle((18,28,W-18,95),radius=15,fill=(10,55,74),outline=(34,191,222),width=2)
-    b=brand.upper();brf=font(19,True)
-    while d.textbbox((0,0),b,font=brf)[2]>W-52 and len(b)>8:b=b[:-2]
-    d.text((30,51),b,font=brf,fill=(224,251,255))
-    d.rounded_rectangle((22,215,W-22,755),radius=24,fill=(12,33,54),outline=(36,175,203),width=3)
-    d.text((43,259),headline.upper(),font=font(17,True),fill=(62,226,236))
-    for size in (39,35,31,27,24,21,19):
-        ft=font(size,True);lines=wrapped(d,copy.replace("\n"," "),ft,W-84)
-        if len(lines)*int(size*1.35)<385:break
-    yy=368-len(lines)*int(size*1.35)/3
-    for line in lines:
-        tw=d.textbbox((0,0),line,font=ft)[2]
-        d.text(((W-tw)/2,yy),line,font=ft,fill=(242,251,255));yy+=int(size*1.35)
-    d.rounded_rectangle((45,814,W-45,821),radius=3,fill=(31,80,100))
-    d.rounded_rectangle((45,814,45+int((W-90)*(idx+1)/total),821),radius=3,fill=(34,226,239))
-    d.text((45,847),"AUTOMATE  •  LEARN  •  BUILD",font=font(14,True),fill=(142,226,234))
-    d.text((45,900),"#Shorts   #n8n   #Automation",font=font(14),fill=(202,220,231))
+        k=y/H
+        rgb=tuple(int(base[i]*(1-k)+mid[i]*k*.54) for i in range(3))
+        d.line((0,y,W,y),fill=rgb)
+    for y in range(125,860,92):
+        d.line((20,y,W-20,y),fill=tuple(min(255,z+17) for z in base),width=1)
+    d.ellipse((W-165,-82,W+95,170),outline=bright,width=5)
+    d.rounded_rectangle((18,25,W-18,95),radius=15,fill=base,outline=bright,width=2)
+    b=brand.upper();ft=font(18,True)
+    while d.textbbox((0,0),b,font=ft)[2]>W-48 and len(b)>10:b=b[:-2]
+    d.text((30,50),b,font=ft,fill=(247,250,255))
+    label=headline.upper()[:34]
+    d.rounded_rectangle((26,135,W-26,214),radius=20,fill=mid)
+    d.text((43,157),label,font=font(23,True),fill=(255,255,255))
+    is_intro=(idx==0);is_end=(idx==total-1)
+    top=275 if idx%2==0 else 260
+    bottom=645 if idx%2==0 else 630
+    d.rounded_rectangle((22,top,W-22,bottom),radius=25,fill=(241,249,252),outline=bright,width=4)
+    # Draw a topic-specific concept icon or explanatory flow, not identical slides.
+    if theme=="automation":
+        for j in range(3):
+            xx=62+j*150
+            d.rounded_rectangle((xx,top+28,xx+104,top+90),radius=12,fill=mid)
+            d.text((xx+20,top+48),["GO","DO","DONE"][j],font=font(18,True),fill=(255,255,255))
+            if j<2:d.line((xx+106,top+58,xx+143,top+58),fill=mid,width=5)
+    elif theme=="data":
+        for j,h in enumerate([35,60,82,51]):
+            xx=112+j*83
+            d.rounded_rectangle((xx,bottom-40-h,xx+43,bottom-40),radius=7,fill=mid)
+    elif theme=="security":
+        d.polygon([(W//2,top+35),(W//2+43,top+53),(W//2+33,top+116),(W//2,top+139),(W//2-33,top+116),(W//2-43,top+53)],fill=mid)
+    elif theme=="cloud":
+        for j in range(3):
+            xx=126+j*105
+            d.rounded_rectangle((xx,top+32,xx+76,top+68),radius=9,fill=mid)
+    elif theme=="creative":
+        d.rounded_rectangle((W//2-62,top+25,W//2+62,top+109),radius=14,outline=mid,width=7)
+        d.polygon([(W//2-13,top+42),(W//2-13,top+94),(W//2+28,top+67)],fill=mid)
+    else:
+        for j in range(3):
+            xx=134+j*68
+            d.ellipse((xx,top+43,xx+38,top+81),fill=mid)
+            if j<2:d.line((xx+38,top+62,xx+68,top+62),fill=mid,width=4)
+    text=copy.replace("\n"," ").strip()
+    max_width=W-105
+    for sz in (31,28,25,22,19,17):
+        ff=font(sz,True)
+        lines=wrapped(d,text,ff,max_width)
+        if len(lines)*int(sz*1.38)<=160:break
+    yy=top+152
+    for line in lines[:7]:
+        tw=d.textbbox((0,0),line,font=ff)[2]
+        d.text(((W-tw)/2,yy),line,font=ff,fill=(20,39,62))
+        yy+=int(sz*1.38)
+    pose="point" if idx%3==0 else ("think" if idx%3==1 else "explain")
+    cartoon(d,(104,677),pose=pose,scale=.63)
+    d.rounded_rectangle((214,705,510,840),radius=16,fill=base,outline=bright,width=3)
+    tip= "LET'S EXPLORE!" if is_intro else ("FOLLOW FOR MORE" if is_end else ["WATCH THE CONNECTION","HERE'S THE IDEA","PUT IT TO WORK"][idx%3])
+    d.text((231,746),tip,font=font(17,True),fill=(255,255,255))
+    d.rounded_rectangle((32,885,W-32,892),radius=3,fill=base)
+    d.rounded_rectangle((32,885,32+int((W-64)*(idx+1)/max(1,total)),892),radius=3,fill=bright)
+    d.text((36,915),"AI • AUTOMATION • EXPLAINED",font=font(14,True),fill=(241,250,255))
     im.save(path)
 # Azure Speech F0 neural TTS is enabled when its key and region are configured.
 # Without those variables, the original free eSpeak NG path remains available.
@@ -106,7 +193,7 @@ def generate(data,tmp):
     slides.append(("FOLLOW FOR MORE","Practical AI and automation tutorials.",1.4))
     concat=["ffconcat version 1.0"]
     for i,(heading,txt,length) in enumerate(slides):
-        name=f"slide_{i:02d}.png";slide(tmp/name,heading,txt,data.brand,i,len(slides))
+        name=f"slide_{i:02d}.png";slide(tmp/name,heading,txt,data.brand,i,len(slides),data.topic)
         concat.extend([f"file '{name}'",f"duration {length:.4f}"])
     concat.append(f"file 'slide_{len(slides)-1:02d}.png'")
     (tmp/"slides.txt").write_text("\n".join(concat)+"\n")
@@ -117,7 +204,7 @@ def generate(data,tmp):
     return output
 @app.get("/health")
 def health():
-    return {"status":"ok","renderer":"ffmpeg-cloud-shorts","tts":"azure-neural" if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION") else "espeak-ng","format":"540x960 mp4"}
+    return {"status":"ok","renderer":"ffmpeg-cloud-shorts-v2","tts":"azure-neural" if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_SPEECH_REGION") else "espeak-ng","format":"540x960 mp4"}
 @app.post("/render")
 async def render(data:Short,x_render_key:str|None=Header(None)):
     secret=os.environ.get("RENDER_SECRET")
