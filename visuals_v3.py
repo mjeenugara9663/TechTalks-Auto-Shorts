@@ -85,10 +85,10 @@ def render_slide_v3(path, headline, copy, brand, idx, total, topic,
     bbox = sprite.getchannel('A').getbbox()
     if bbox:
         sprite = sprite.crop(bbox)
-        ratio = min(218/sprite.width,490/sprite.height)
+        ratio = min(255/sprite.width,510/sprite.height)
         sprite = sprite.resize((max(1,int(sprite.width*ratio)),max(1,int(sprite.height*ratio))),Image.Resampling.LANCZOS)
-        sx = max(0,(218-sprite.width)//2)
-        sy = 837-sprite.height
+        sx = max(-14,(231-sprite.width)//2)
+        sy = 847-sprite.height
         im.alpha_composite(sprite,(sx,sy))
 
     # Dedicated readable card. Fit every caption before drawing; keep footer clear.
@@ -106,13 +106,36 @@ def render_slide_v3(path, headline, copy, brand, idx, total, topic,
     draw.text((246,323),badge_lines[0],font=badge_f,fill='white')
     draw.line((234,381,496,381),fill=mid,width=3)
     statement = ' '.join(copy.split())
-    caption_f, caption_lines, caption_lh = _fitted(draw,statement,256,327,font_fn,
-        [31,29,27,25,23,21,19,18,17,16])
-    content_top, content_bottom = 398,733
-    cy = content_top + max(0, (content_bottom-content_top-len(caption_lines)*caption_lh)//2)
+    # A consistent top baseline prevents captions jumping vertically between scenes.
+    caption_f, caption_lines, caption_lh = _fitted(draw,statement,256,307,font_fn,
+        [33,31,29,27,25,23,21,19,18,17,16])
+    cy = 418
     for line in caption_lines:
         draw.text((235,cy),line,font=caption_f,fill=(24,42,68))
         cy += caption_lh
+    # Use the spare card space for topic-related artwork instead of a huge empty rectangle.
+    # Never let the motif overlap the caption or CTA footer.
+    if cy + 82 <= 731:
+        motif_top = min(661, cy + 30)
+        draw.line((240,motif_top,485,motif_top),fill=tuple(min(255,v+50) for v in mid),width=2)
+        my = motif_top + 17
+        if theme in ('ai','learning','data'):
+            # Three connected concepts: abstract nodes (not factual claims).
+            xx = [286,362,439]
+            for j in range(2):
+                draw.line((xx[j]+14,my+13,xx[j+1]-14,my+13),fill=mid,width=4)
+            for j,x in enumerate(xx):
+                draw.ellipse((x-14,my,x+14,my+28),fill=mid if j!=1 else accent,outline=mid,width=2)
+        elif theme in ('automation','cloud'):
+            for x in (256,339,422):
+                draw.rounded_rectangle((x,my,x+39,my+29),radius=8,fill=mid)
+            for x in (295,378):
+                draw.line((x+3,my+14,x+38,my+14),fill=mid,width=4)
+        elif theme=='security':
+            draw.polygon([(362,my),(385,my+10),(381,my+32),(362,my+41),(343,my+32),(339,my+10)],fill=mid)
+        else:
+            draw.rounded_rectangle((331,my,393,my+39),radius=11,outline=mid,width=4)
+            draw.polygon([(352,my+7),(352,my+32),(378,my+20)],fill=mid)
     draw.rounded_rectangle((230,752,501,799),radius=12,fill=mid+(255,))
     footer_f = font_fn(15,True)
     draw.text((244,767),'LEARN  •  BUILD  •  GROW',font=footer_f,fill='white')
