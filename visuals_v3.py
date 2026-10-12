@@ -3,22 +3,49 @@ import re
 from PIL import Image, ImageDraw
 
 
-def split_voiceover(text, max_words=9, max_chars=74):
-    """Make short, readable caption scenes without discarding narration words."""
-    chunks, current = [], []
-    for word in text.split():
-        candidate = ' '.join(current + [word])
-        if current and (len(current) >= max_words or len(candidate) > max_chars):
-            chunks.append(' '.join(current))
-            current = []
-        current.append(word)
-        if len(current) >= 5 and re.search(r'[.!?;]$', word):
-            chunks.append(' '.join(current))
-            current = []
-    if current:
-        chunks.append(' '.join(current))
-    return chunks
+def split_voiceover(text, max_chars=180, max_words=36):
+    """Keep complete narration sentences on screen rather than fixed 9-word snippets.
 
+    Pair short sentences when they fit together. For unusually long sentences,
+    prefer comma/semicolon clause boundaries and never discard narration words.
+    """
+    normalized = ' '.join(text.split())
+    if not normalized:
+        return []
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9"“])', normalized)
+    scenes = []
+    for sentence in sentences:
+        if len(sentence) <= max_chars and len(sentence.split()) <= max_words:
+            if (scenes and len(scenes[-1]) + len(sentence) + 1 <= 92
+                    and len((scenes[-1] + ' ' + sentence).split()) <= 17):
+                scenes[-1] += ' ' + sentence
+            else:
+                scenes.append(sentence)
+            continue
+
+        clauses = re.split(r'(?<=[,;:])\s+|(?<=—)\s*', sentence)
+        current = ''
+        for clause in clauses:
+            proposed = (current + ' ' + clause).strip()
+            if current and (len(proposed) > max_chars or len(proposed.split()) > max_words):
+                scenes.append(current)
+                current = ''
+                proposed = clause
+            if len(proposed) <= max_chars and len(proposed.split()) <= max_words:
+                current = proposed
+                continue
+
+            # Last resort for unpunctuated input; all words are preserved.
+            for word in clause.split():
+                trial = (current + ' ' + word).strip()
+                if current and (len(trial) > max_chars or len(trial.split()) > max_words):
+                    scenes.append(current)
+                    current = word
+                else:
+                    current = trial
+        if current:
+            scenes.append(current)
+    return scenes
 
 def _wrap(draw, text, f, max_width):
     lines = []
